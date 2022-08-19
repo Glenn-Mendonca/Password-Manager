@@ -1,5 +1,7 @@
 old_temp/
 venv/
 App/__pycache__/
-App/User/*.json
-App/Data/*.txt
+App/User/
+App/Data/
+/images/
+
