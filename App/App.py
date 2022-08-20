@@ -5,7 +5,7 @@ from tkinter import messagebox
 from tkinter import ttk
 from tkinter.constants import CENTER, END 
 from tkinter.messagebox import showinfo
-from Cryptography import *
+import Cryptography
 import hashlib
 import ctypes
 import json
@@ -16,6 +16,7 @@ ctypes.windll.shcore.SetProcessDpiAwareness(1)
 #Data Directories
 DIRS = ["User", "Data", "Images"]
 
+#Create User and Data Directories
 def init_directories():
     path_prefix = os.path.split(sys.argv[0])[0]
     if path_prefix != "":
@@ -25,6 +26,12 @@ def init_directories():
     for dir in DIRS:
         if not os.path.exists(dir):
             os.makedirs(dir)
+
+#Create file at specified path to store json data
+def create_json_file(path, filename):
+    if not os.path.exists(os.path.join(path, filename)):
+        with open(os.path.join(path, filename), 'w') as file:
+            json.dump({},file)
 
 #Main App Class
 class App(tk.Tk):
@@ -51,9 +58,10 @@ class App(tk.Tk):
         self.canvas.create_image(0,0,anchor='nw',image=self.background)
 
         #Create User Password file if doesn't exist
-        if not os.path.exists(os.path.join(DIRS[0], "users.json")):
-            with open(os.path.join(DIRS[0], "users.json"), 'w') as file:
-                json.dump({},file)
+        create_json_file(DIRS[0], "users.json")
+
+        #User data 
+        self.user_data = None
         
         #Load Startup Screen
         self.main()
@@ -108,9 +116,10 @@ class App(tk.Tk):
         tree = ttk.Treeview(self.canvas, columns=columns, show='headings')
         tree.heading('#1', text='App/Site', anchor=CENTER)
         tree.heading('#2', text='Password', anchor=CENTER)
+        self.get_data(self.Name.get(), self.Pwd.get())
         details = []
-        for n in range(1, 100):
-            details.append((f'first {n}', f'last {n}'))
+        for site in self.user_data.keys():
+            details.append((site, self.user_data[site]))
         for detail in details:
             tree.insert('', index='end', values= tuple(detail))
         self.canvas.create_window(345,250,window=tree,width=600,height=215)
@@ -141,15 +150,34 @@ class App(tk.Tk):
                 messagebox.showerror('Incomplete Credentials','Error: Username is already taken')
                 return
         dict = {self.Name.get() : {"Email":self.Email.get(),"Password":(hashlib.sha256(self.Pwd.get().encode())).hexdigest()}}
+        create_json_file(DIRS[1], f'{self.Name.get()}.txt')
+
+        #Encrypt file contents with user password
+        with open(os.path.join(DIRS[1], f'{self.Name.get()}.txt'), "r+") as file:
+            enc_data = Cryptography.encrypt(self.Pwd.get(), file.read())
+            file.seek(0)
+            file.write(enc_data)
+
         self.write_json(dict)
         self.main()
 
     #Fetch user data
-    def get_data(Username, data, filename=os.path.join(DIRS[0], "users.json")):
-        details = ''
-        with open(filename,'r') as file:
-            file_data = json.load(file)
-            details = file_data[Username]["temp"]
+    def get_data(self, username, password):
+        with open(os.path.join(DIRS[1], f'{username}.txt'),'r') as file:
+            enc_data = file.read()
+            dec_data = Cryptography.decrypt(password, enc_data)
+            try:
+                self.user_data = json.loads(dec_data)
+                return True
+            except (ValueError, ):
+                return False
+             
+
+    #Save/Update user data
+    def update_data(self, username, password):
+        with open(os.path.join(DIRS[1], f'{username}.txt'),'w') as file:
+            enc_data = Cryptography.decrypt(password, json.dumps(self.user_data))
+            file.write(enc_data)
 
     #Authorise User
     def check(self):
