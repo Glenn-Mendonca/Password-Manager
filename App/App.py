@@ -1,17 +1,18 @@
 #Dependencies
 import os, sys
+from re import S
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
 from tkinter.constants import CENTER, END 
-from tkinter.messagebox import showinfo
+import pyperclip as pc
 import Cryptography
 import hashlib
 import ctypes
 import json
 
 #Output higher res windows
-ctypes.windll.shcore.SetProcessDpiAwareness(1)
+ctypes.windll.shcore.SetProcessDpiAwareness(2)
 
 #Data Directories
 DIRS = ["User", "Data", "Images"]
@@ -48,6 +49,10 @@ class App(tk.Tk):
         self.Pwd = tk.StringVar()
         self.Email = tk.StringVar()
 
+        #Data window vars
+        self.Site = tk.StringVar()
+        self.SitePassword = tk.StringVar()
+
         #Icon
         icon = tk.PhotoImage(file=os.path.join(DIRS[2], "icon.png"))
         self.iconphoto(False,icon)
@@ -62,7 +67,8 @@ class App(tk.Tk):
 
         #User data 
         self.user_data = None
-        
+        self.loggedin = False
+
         #Load Startup Screen
         self.main()
 
@@ -109,24 +115,34 @@ class App(tk.Tk):
     #After Login Successful
     def pass_window(self):
         self.clearCanvas()
+        site = tk.Entry(self.canvas,textvariable=self.Site,font=("Arial", 10),justify='center')
+        pwd = tk.Entry(self.canvas,textvariable=self.SitePassword,font=("Arial", 10),justify='center')
+        self.canvas.create_text(180, 53, text= "App/Site:",fill="white",font=('Prompt 11 bold'),tags="register")
+        self.canvas.create_window(340,53,window=site,width=200,height=30,tags="register")
+        self.canvas.create_text(180, 93, text= "Password:",fill="white",font=('Prompt 11 bold'),tags="register")
+        self.canvas.create_window(340,93,window=pwd,width=200,height=30,tags="register")
+        addbtn = tk.Button(text='Update/Add',height=1,padx=10,font=("Arial", 10, "bold"),border=0,command=self.update_data)
+        addbtn.place(x=460,y=40)
+        delbtn = tk.Button(text=' Delete ',height=1,padx=10,font=("Arial", 10, "bold"),border=0,command=self.delete_data)
+        delbtn.place(x=475,y=80)
         style = ttk.Style()
         style.theme_use('clam')
         style.configure('Treeview.Heading',background='#fc9803')
         columns = ('#1', '#2')
-        tree = ttk.Treeview(self.canvas, columns=columns, show='headings')
-        tree.heading('#1', text='App/Site', anchor=CENTER)
-        tree.heading('#2', text='Password', anchor=CENTER)
+        self.tree = ttk.Treeview(self.canvas, columns=columns, show='headings')
+        self.tree.bind('<Double-1>', self.copy_password)
+        self.tree.heading('#1', text='App/Site', anchor=CENTER)
+        self.tree.heading('#2', text='Password', anchor=CENTER)
+        self.loggedin = True
         self.get_data(self.Name.get(), self.Pwd.get())
-        details = []
-        for site in self.user_data.keys():
-            details.append((site, self.user_data[site]))
-        for detail in details:
-            tree.insert('', index='end', values= tuple(detail))
-        self.canvas.create_window(345,250,window=tree,width=600,height=215)
-        scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=tree.yview)
-        tree.configure(yscroll=scrollbar.set)
+        self.update_data()
+        self.canvas.create_window(345,250,window=self.tree,width=600,height=215)
+        scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscroll=scrollbar.set)
         self.canvas.create_window(655,250,window=scrollbar,height=215,width=20)
         self.canvas.create_text(660, 390, text= "© Glenn_M",fill="white",font=('Prompt 9 bold'))
+        
+        self.canvas.pack()
 
     #Curved Rectangle
     def curved_rectangle(self,x1, y1, x2, y2, r=25, **kwargs):    
@@ -171,13 +187,15 @@ class App(tk.Tk):
                 return True
             except (ValueError, ):
                 return False
-             
 
-    #Save/Update user data
-    def update_data(self, username, password):
-        with open(os.path.join(DIRS[1], f'{username}.txt'),'w') as file:
-            enc_data = Cryptography.decrypt(password, json.dumps(self.user_data))
-            file.write(enc_data)
+    #Encrypt and save user data       
+    def save_data(self):
+        if self.loggedin:
+            with open(os.path.join(DIRS[1], f'{self.Name.get()}.txt'),'w') as file:
+                json_data = json.dumps(self.user_data)
+                enc_data = Cryptography.encrypt(self.Pwd.get(), json_data)
+                file.write(enc_data)
+        self.destroy()
 
     #Authorise User
     def check(self):
@@ -191,7 +209,32 @@ class App(tk.Tk):
             else:
                 messagebox.showerror('Incorrect Credentials',f"No user found with Username : {self.Name.get()}")
         
-    
+    #Copy data to clipboard
+    def copy_password(self, event):
+        for selected_item in self.tree.selection():
+            item = self.tree.item(selected_item)
+            pc.copy(item['values'][1])
+            messagebox.showinfo("Copied", f"Password for {item['values'][0]} copied")
+
+    #Update table data
+    def update_data(self):
+        self.tree.delete(*self.tree.get_children())
+        if(self.Site.get()!="" and self.SitePassword.get()!=""):
+            self.user_data[self.Site.get()] = self.SitePassword.get()
+            self.Site.set("")
+            self.SitePassword.set("")
+        for site in self.user_data.keys():
+            detail = (site, self.user_data[site])
+            self.tree.insert('', index='end', values=detail )
+
+    #Delete table data
+    def delete_data(self):
+        for selected_item in self.tree.selection():
+            item = self.tree.item(selected_item)
+            del self.user_data[item['values'][0]]
+            messagebox.showinfo("Deleted", f"{item['values'][0]} data deleted")
+        self.update_data()
+
     #Add User to JSON file
     def write_json(self,new_data):
         with open(os.path.join(DIRS[0], "users.json"),'r+') as file:
@@ -215,4 +258,5 @@ class App(tk.Tk):
 if(__name__ == '__main__'):
     init_directories()
     app = App()
+    app.protocol("WM_DELETE_WINDOW", app.save_data)
     app.mainloop()
